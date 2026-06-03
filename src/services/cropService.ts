@@ -9,10 +9,12 @@ export type DoencaResultado = {
   descricao: string;
   tratamento: string;
   tipo: string;
+  categoria: 'fungo' | 'bacteria' | 'praga' | 'nutricional' | 'outro';
 };
 
 export type ResultadoAnalise = {
   saudavel: boolean;
+  alertaNutricional: boolean;
   plantaNome: string;
   plantaCientifico: string;
   doencas: DoencaResultado[];
@@ -20,7 +22,6 @@ export type ResultadoAnalise = {
 };
 
 const traducoes: Record<string, string> = {
-  // Fungos
   'grey mold': 'Mofo cinzento',
   'gray mold': 'Mofo cinzento',
   'powdery mildew': 'Oídio',
@@ -44,18 +45,15 @@ const traducoes: Record<string, string> = {
   'cercospora': 'Cercosporiose',
   'septoria': 'Septoriose',
   'botrytis': 'Botrite',
-  // Bactérias
   'bacterial blight': 'Crestamento bacteriano',
   'bacterial spot': 'Mancha bacteriana',
   'bacterial wilt': 'Murcha bacteriana',
   'fire blight': 'Fogo bacteriano',
-  // Pragas
   'aphids': 'Pulgões',
   'spider mites': 'Ácaros',
   'whitefly': 'Mosca branca',
   'thrips': 'Tripes',
   'caterpillar': 'Lagarta',
-  // Outros
   'nutrient deficiency': 'Deficiência nutricional',
   'nitrogen deficiency': 'Deficiência de nitrogênio',
   'iron deficiency': 'Deficiência de ferro',
@@ -65,6 +63,23 @@ const traducoes: Record<string, string> = {
 function traduzir(nome: string): string {
   const nomeLower = nome.toLowerCase();
   return traducoes[nomeLower] ?? nome;
+}
+
+function categorizar(nome: string, tipo: string): DoencaResultado['categoria'] {
+  const n = nome.toLowerCase();
+  const t = tipo.toLowerCase();
+
+  if (n.includes('nutrient') || n.includes('deficiency') || n.includes('deficiência')) return 'nutricional';
+  if (t.includes('fung') || n.includes('mold') || n.includes('mildew') || n.includes('rust') ||
+      n.includes('blight') || n.includes('rot') || n.includes('anthracnose') ||
+      n.includes('botrytis') || n.includes('sclerotinia') || n.includes('alternaria') ||
+      n.includes('cercospora') || n.includes('septoria') || n.includes('fusarium') ||
+      n.includes('verticillium')) return 'fungo';
+  if (t.includes('bacter') || n.includes('bacterial') || n.includes('fire blight')) return 'bacteria';
+  if (t.includes('pest') || t.includes('insect') || n.includes('aphid') || n.includes('mite') ||
+      n.includes('whitefly') || n.includes('thrips') || n.includes('caterpillar')) return 'praga';
+
+  return 'outro';
 }
 
 export async function analisarPlanta(imagemBase64: string): Promise<ResultadoAnalise> {
@@ -84,7 +99,6 @@ export async function analisarPlanta(imagemBase64: string): Promise<ResultadoAna
 
   if (!resposta.ok) {
     const textoErro = await resposta.text();
-    console.log('Erro API texto:', textoErro);
     throw new Error(`Erro HTTP ${resposta.status}: ${textoErro}`);
   }
 
@@ -100,20 +114,26 @@ export async function analisarPlanta(imagemBase64: string): Promise<ResultadoAna
   const doencasBruto: any[] = dados?.result?.disease?.suggestions ?? [];
 
   const doencas: DoencaResultado[] = doencasBruto
-    .filter((d) => (d.probability ?? 0) >= 0.10)
+    .filter((d) => (d.probability ?? 0) >= 0.50)
+    .filter((d) => (d.name ?? '').toLowerCase() !== 'healthy')
     .map((d) => ({
       nome: traduzir(d.name ?? 'Doença desconhecida'),
       probabilidade: parseFloat((d.probability ?? 0).toFixed(4)),
       descricao: (d.details?.description ?? '') as string,
       tratamento: (d.details?.treatment?.chemical?.[0] ?? '') as string,
       tipo: (d.details?.type ?? '') as string,
+      categoria: categorizar(d.name ?? '', d.details?.type ?? ''),
     }))
     .sort((a, b) => b.probabilidade - a.probabilidade);
 
-  const saudavel: boolean = (dados?.result?.is_healthy?.binary as boolean) ?? doencas.length === 0;
+  const temProblemaReal = doencas.some(d => d.categoria !== 'nutricional');
+  const temNutricional  = doencas.some(d => d.categoria === 'nutricional');
+  const saudavel        = !temProblemaReal;
+  const alertaNutricional = !temProblemaReal && temNutricional;
 
   return {
     saudavel,
+    alertaNutricional,
     plantaNome,
     plantaCientifico,
     doencas,

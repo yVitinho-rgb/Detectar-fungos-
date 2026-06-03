@@ -27,44 +27,60 @@ const ScanIA = () => {
   const [erro, setErro]             = useState<string | null>(null);
 
   const abrirCamera = async () => {
-    const isEmulator = false;
-
-    let imagem;
-
-    if (isEmulator) {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permissão negada', 'Precisamos de acesso à galeria.');
-        return;
-      }
-      imagem = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-        allowsEditing: true,
-        aspect: [4, 3],
-      });
-    } else {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permissão negada', 'Precisamos de acesso à câmera.');
-        return;
-      }
-      imagem = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-        allowsEditing: true,
-        aspect: [4, 3],
-      });
-    }
-
-    if (imagem.canceled || !imagem.assets?.[0]) return;
-
-    const uri = imagem.assets[0].uri;
-    setImagemUri(uri);
-    setResultado(null);
-    setErro(null);
-
-    await enviarParaAPI(uri);
+    Alert.alert(
+      'Analisar Planta',
+      'Como deseja enviar a imagem?',
+      [
+        {
+          text: 'Câmera',
+          onPress: async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert('Permissão negada', 'Precisamos de acesso à câmera.');
+              return;
+            }
+            const imagem = await ImagePicker.launchCameraAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              quality: 0.7,
+              allowsEditing: true,
+              aspect: [4, 3],
+            });
+            if (imagem.canceled || !imagem.assets?.[0]) return;
+            const uri = imagem.assets[0].uri;
+            setImagemUri(uri);
+            setResultado(null);
+            setErro(null);
+            await enviarParaAPI(uri);
+          },
+        },
+        {
+          text: 'Galeria',
+          onPress: async () => {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert('Permissão negada', 'Precisamos de acesso à galeria.');
+              return;
+            }
+            const imagem = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              quality: 0.7,
+              allowsEditing: true,
+              aspect: [4, 3],
+            });
+            if (imagem.canceled || !imagem.assets?.[0]) return;
+            const uri = imagem.assets[0].uri;
+            setImagemUri(uri);
+            setResultado(null);
+            setErro(null);
+            await enviarParaAPI(uri);
+          },
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
   const enviarParaAPI = async (uri: string) => {
@@ -75,9 +91,6 @@ const ScanIA = () => {
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
-      console.log('Base64 tamanho:', base64.length);
-      console.log('Base64 inicio:', base64.substring(0, 50));
 
       const resultado = await analisarPlanta(base64);
       setResultado(resultado);
@@ -97,14 +110,34 @@ const ScanIA = () => {
 
   const renderBadge = () => {
     if (!resultado) return null;
-    const cor   = resultado.saudavel ? '#3ddc84' : '#e8644a';
-    const texto = resultado.saudavel ? '✔ Saudável' : '⚠ Problema detectado';
+
+    if (!resultado.saudavel) {
+      return (
+        <View style={{ backgroundColor: '#3d1a14', borderRadius: 99,
+          paddingHorizontal: 14, paddingVertical: 5, alignSelf: 'flex-start', marginBottom: 12 }}>
+          <Text style={{ color: '#e8644a', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
+            ⚠ Problema detectado
+          </Text>
+        </View>
+      );
+    }
+
+    if (resultado.alertaNutricional) {
+      return (
+        <View style={{ backgroundColor: '#3d3014', borderRadius: 99,
+          paddingHorizontal: 14, paddingVertical: 5, alignSelf: 'flex-start', marginBottom: 12 }}>
+          <Text style={{ color: '#f0c040', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
+            ⚡ Atenção nutricional
+          </Text>
+        </View>
+      );
+    }
+
     return (
-      <View style={{ backgroundColor: resultado.saudavel ? '#1a3d28' : '#3d1a14',
-        borderRadius: 99, paddingHorizontal: 14, paddingVertical: 5,
-        alignSelf: 'flex-start', marginBottom: 12 }}>
-        <Text style={{ color: cor, fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
-          {texto}
+      <View style={{ backgroundColor: '#1a3d28', borderRadius: 99,
+        paddingHorizontal: 14, paddingVertical: 5, alignSelf: 'flex-start', marginBottom: 12 }}>
+        <Text style={{ color: '#3ddc84', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
+          ✔ Saudável
         </Text>
       </View>
     );
@@ -174,7 +207,9 @@ const ScanIA = () => {
               {resultado.doencas.length > 0 && (
                 <ScrollView style={{ maxHeight: 80, marginTop: 6 }} nestedScrollEnabled>
                   {resultado.doencas.map((d, i) => (
-                    <Text key={i} style={[styles.resultSubtitle, { color: '#e8644a' }]}>
+                    <Text key={i} style={[styles.resultSubtitle, {
+                      color: d.categoria === 'nutricional' ? '#f0c040' : '#e8644a'
+                    }]}>
                       • {d.nome} — {(d.probabilidade * 100).toFixed(0)}%
                     </Text>
                   ))}
